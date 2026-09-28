@@ -4,11 +4,13 @@ import { hasCommandPermission } from '../utils/permissions.js';
 import { renderTemplate } from '../utils/templates.js';
 import { t } from '../utils/messages.js';
 import { predictionView } from '../utils/prediction-format.js';
+import { createExpiringStore } from '../utils/expiring-store.js';
 
 export function createCommandHandler({ client, channel, prefix, commands, commandOptions = {} }) {
   const cooldowns = new Map();
-  const globalCustomUntil = new Map();
-  const userCustomUntil = new Map();
+  const now = commandOptions.now ?? Date.now;
+  const globalCustomUntil = createExpiringStore({ now });
+  const userCustomUntil = createExpiringStore({ now });
   return async (message) => {
     if (message.channel !== channel || message.username === client.username) return;
     const text = message.message.trim();
@@ -48,13 +50,13 @@ export function createCommandHandler({ client, channel, prefix, commands, comman
         client.say(channel, t('commands.noAccess'));
         return;
       }
-      const now = commandOptions.now?.() ?? Date.now();
+      const currentTime = now();
       const userKey = `${commandId}:${message.username}`;
-      if ((custom.globalCooldown > 0 && now < (globalCustomUntil.get(commandId) ?? 0)) ||
-        (custom.userCooldown > 0 && now < (userCustomUntil.get(userKey) ?? 0))) return;
-      if (custom.globalCooldown > 0) globalCustomUntil.set(commandId, now + custom.globalCooldown * 1000);
+      if ((custom.globalCooldown > 0 && globalCustomUntil.isActive(commandId, currentTime)) ||
+        (custom.userCooldown > 0 && userCustomUntil.isActive(userKey, currentTime))) return;
+      if (custom.globalCooldown > 0) globalCustomUntil.set(commandId, currentTime + custom.globalCooldown * 1000);
       else globalCustomUntil.delete(commandId);
-      if (custom.userCooldown > 0) userCustomUntil.set(userKey, now + custom.userCooldown * 1000);
+      if (custom.userCooldown > 0) userCustomUntil.set(userKey, currentTime + custom.userCooldown * 1000);
       else userCustomUntil.delete(userKey);
     }
     try {
@@ -65,7 +67,7 @@ export function createCommandHandler({ client, channel, prefix, commands, comman
         const hasRepeatCount = authorizedToRepeat && /^\d+$/u.test(args[0] ?? '');
         const requested = hasRepeatCount ? Number(args[0]) : 1;
         const maximum = commandOptions.maxRepeat ?? 10;
-        if (hasRepeatCount && requested > maximum) client.say(channel, t('commands.tooManyRepeats', { maximum }));
+        if (hasRepeatCount && requested > maximum) await client.say(channel, t('commands.tooManyRepeats', { maximum }));
         const repeat = requested > maximum ? maximum : Math.max(1, requested);
         const random = commandOptions.random?.() ?? Math.random();
         const selected = custom.responses[Math.min(custom.responses.length - 1, Math.floor(random * custom.responses.length))];

@@ -8,7 +8,7 @@ import { parseChatMessage } from './bot/parse-message.js';
 import { TwitchClient } from './bot/twitch-client.js';
 import { configureLogger, logger } from './utils/logger.js';
 import { createCustomCommandStore } from './services/custom-commands.js';
-import { createMessageQueue } from './utils/message-queue.js';
+import { createMessageQueue, createQueuedChatClient } from './utils/message-queue.js';
 import { canModerate } from './utils/permissions.js';
 import path from 'node:path';
 import { loadPollPresets } from './services/poll-presets.js';
@@ -25,6 +25,7 @@ import { createFaceitUserStore } from './services/faceit-user.js';
 import { createPredictionPresetStore } from './services/prediction-presets.js';
 import { createPredictionSession } from './services/prediction-session.js';
 import { t } from './utils/messages.js';
+import { resolveScopedFeatures } from './utils/oauth-scopes.js';
 
 export async function start() {
   const config = loadConfig();
@@ -53,6 +54,18 @@ export async function start() {
     ...config, getAccessToken: () => tokenManager.getAccessToken(),
     refreshAccessToken: tokenManager.canRefresh ? (usedToken) => tokenManager.refreshIfCurrent(usedToken) : undefined,
   });
+  const messageQueue = createMessageQueue({
+    canSend: () => client.isConnected(),
+    send: (channel, message) => {
+      if (!client.isConnected()) return 'dropped';
+      client.say(channel, message);
+      return 'sent';
+    },
+    delayMs: config.commandRepeatDelayMs,
+    onError: (error) => logger.error('Could not send a queued Twitch chat message.', error.message),
+    onDrop: (task) => logger.warn('Dropped an outgoing Twitch chat message because IRC is disconnected.', { channel: task.channel }),
+  });
+  const chatClient = createQueuedChatClient(client, messageQueue);
   const twitchApi = createTwitchApi({ clientId: config.clientId, tokenManager, moderatorId: account.userId, streamInfoCacheSeconds: config.streamInfoCacheSeconds });
   const broadcasterId = await twitchApi.getUserId(config.channel);
   const faceitApi = createFaceitApi({ apiKey: config.faceitApiKey, gameId: config.faceitGameId });
@@ -71,43 +84,50 @@ export async function start() {
   }
   const pollPresets = await loadPollPresets(path.join(config.dataDirectory, 'polls.json'), path.resolve('data/polls.example.json'));
   const pinQueue = await createPinQueue(path.join(config.dataDirectory, 'pin-queue.json'), path.join(config.dataDirectory, 'pins.json'), path.resolve('data/pins.example.json'));
+  const scopedFeatures = resolveScopedFeatures({ scopes: account.scopes, automodRequested: config.automod.enabled, log: logger });
+  const { available: tokenScopes, pinsEnabled, automodEnabled } = scopedFeatures;
+  if (!tokenScopes.has('channel:manage:broadcast')) logger.warn('Changing stream title or category is disabled: OAuth token is missing channel:manage:broadcast.');
+  else if (account.userId !== broadcasterId) logger.warn('Changing stream title or category is disabled: OAuth token must belong to the channel broadcaster.');
+  if (!tokenScopes.has('moderator:manage:chat_settings')) logger.warn('Changing chat modes is disabled: OAuth token is missing moderator:manage:chat_settings.');
+  if (!tokenScopes.has('moderator:manage:chat_messages')) logger.warn('Clearing chat is disabled: OAuth token is missing moderator:manage:chat_messages.');
+  if (!tokenScopes.has('moderator:manage:shoutouts')) logger.warn('The !so command is unavailable: OAuth token is missing moderator:manage:shoutouts.');
+  if (!tokenScopes.has('clips:edit')) logger.warn('The !clip command is unavailable: OAuth token is missing clips:edit.');
   const chatTimers = await createChatTimers(path.join(config.dataDirectory, 'timers.json'), {
-    minMessages: config.timerMinChatMessages, send: (channel, text) => client.say(channel, text), channel: config.channel,
+    minMessages: config.timerMinChatMessages, send: (channel, text) => chatClient.say(channel, text), channel: config.channel,
   });
   const autoReplies = await createAutoReplies(path.join(config.dataDirectory, 'auto-replies.json'), {
     cooldownSeconds: config.autoReplyCooldownSeconds, botUsername: config.username, prefix: config.prefix,
-    send: (channel, text) => client.say(channel, text), channel: config.channel,
+    send: (channel, text) => chatClient.say(channel, text), channel: config.channel,
   });
   const reminders = await createReminders(path.join(config.dataDirectory, 'reminders.json'), {
-    send: (channel, text) => client.say(channel, text), canSend: () => client.isConnected(), channel: config.channel,
+    send: (channel, text) => chatClient.say(channel, text), canSend: () => client.isConnected(), channel: config.channel,
   });
   const activeChatters = createActiveChatters({
     windowMinutes: config.activeChatterWindowMinutes, botUsername: config.username, broadcaster: config.channel,
   });
-  const hasPollScope = account.scopes.includes('channel:manage:polls');
+  const hasPollScope = tokenScopes.has('channel:manage:polls');
   const isPollBroadcaster = account.userId === broadcasterId;
   const pollsEnabled = hasPollScope && isPollBroadcaster && Object.keys(pollPresets).length > 0;
   if (!hasPollScope) logger.warn('Poll commands disabled: OAuth token is missing channel:manage:polls.');
   else if (!isPollBroadcaster) logger.warn('Poll commands disabled: the OAuth token must belong to the channel broadcaster.');
-  const messageQueue = createMessageQueue({ send: (channel, message) => client.say(channel, message), delayMs: config.commandRepeatDelayMs });
   const predictionSession = createPredictionSession({
     botUsername: config.username,
-    onComplete: (result) => client.say(config.channel, t('prediction.finished', result)),
+    onComplete: (result) => chatClient.say(config.channel, t('prediction.finished', result)),
   });
   const automod = createAutoMod({
     client: { timeout: (username, durationSeconds, reason, userId) => twitchApi.timeoutUser({ broadcasterId, username, userId, durationSeconds, reason }) },
-    config: config.automod,
+    config: { ...config.automod, enabled: automodEnabled },
   });
   const handleCommand = createCommandHandler({
-    client, channel: config.channel, prefix: config.prefix, commands,
+    client: chatClient, channel: config.channel, prefix: config.prefix, commands,
     commandOptions: {
       weatherTimeoutMs: config.weatherTimeoutMs, weatherAllowedUsernames: config.weatherAllowedUsernames,
       customCommands, messageQueue, maxRepeat: config.commandRepeatMax, canModerate,
       twitchApi, broadcasterId, botUserId: account.userId, pinDurationSeconds: config.pinDurationSeconds,
-      pinMessage: config.pinMessage, pollPresets, pollsEnabled,
+      pinMessage: config.pinMessage, pinsEnabled, pollPresets, pollsEnabled,
       faceitApi, faceitUserStore,
       predictionPresets, predictionSession,
-      pinQueue, pinQueueAutoRotate: config.pinQueueAutoRotate,
+      pinQueue, pinQueueAutoRotate: config.pinQueueAutoRotate && pinsEnabled,
       chatTimers, autoReplies, reminders, activeChatters, tokenScopes: account.scopes,
     },
   });
@@ -121,10 +141,11 @@ export async function start() {
   const stopReminders = reminders.start();
   const eventSub = new EventSubClient({
     twitchApi, definitions: eventSubDefinitions({ config, scopes: account.scopes, botUserId: account.userId, broadcasterId }),
-    send: (channel, text) => client.say(channel, text), channel: config.channel,
+    send: (channel, text) => chatClient.say(channel, text), channel: config.channel,
   });
   eventSub.start();
-  const stopPinRotation = config.pinQueueAutoRotate ? startPinRotation({
+  if (config.pinQueueAutoRotate && !pinsEnabled) logger.warn('Automatic pin rotation disabled because required pin scopes are missing.');
+  const stopPinRotation = config.pinQueueAutoRotate && pinsEnabled ? startPinRotation({
     pinQueue, intervalSeconds: config.pinQueueIntervalSeconds,
     pin: (text, itemDurationSeconds) => pinText({
       twitchApi, broadcasterId, botUserId: account.userId,
@@ -132,7 +153,7 @@ export async function start() {
     }, text),
     onError: (error) => logger.error('Automatic pin rotation failed.', error.message),
   }) : () => {};
-  logger.info(`Starting bot for #${config.channel}. AutoMod ${config.automod.enabled ? 'enabled' : 'disabled'}.`);
+  logger.info(`Starting bot for #${config.channel}. AutoMod ${automodEnabled ? 'enabled' : 'disabled'}.`);
 
   let closing = false;
   async function handleIncomingMessage(message) {
@@ -158,7 +179,7 @@ export async function start() {
     await stopReminders();
     await eventSub.close();
     automod.close();
-    await messageQueue.close();
+    await messageQueue.close({ drain: false });
     await client.close();
     process.exitCode = 0;
   };

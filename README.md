@@ -71,13 +71,16 @@ npm start
 
 ## Twitch OAuth
 
-При запуске бот проверяет токен и эти scopes:
+При запуске проверяются логин, Client ID и базовые scopes для Twitch IRC:
 
-- `chat:read` и `chat:edit` — Twitch IRC
-- `user:write:chat` — отправка сообщений через Twitch API
-- `moderator:manage:chat_messages` и `moderator:read:chat_messages` — закрепы
+- `chat:read` — чтение сообщений
+- `chat:edit` — отправка сообщений через Twitch IRC
 
-Для AutoMod нужен `moderator:manage:banned_users`. Аккаунт бота должен быть модератором канала, чтобы выдавать таймауты и закреплять сообщения.
+Остальные scopes необязательны. Если нужного scope нет, отключается только связанная возможность, причина записывается в журнал, а базовый бот продолжает работать.
+
+Для закрепов нужны `user:write:chat` и `moderator:manage:chat_messages`. Аккаунт бота также должен быть модератором канала или владельцем.
+
+Для AutoMod нужен `moderator:manage:banned_users`. Аккаунт бота должен иметь право модератора, чтобы выдавать таймауты.
 
 Для Polls нужен `channel:manage:polls`, а токен должен принадлежать владельцу канала. Без этого бот запускается, но команды опросов отключены.
 
@@ -88,6 +91,8 @@ npm start
 Для EventSub follow нужны `moderator:read:followers` и роль модератора у аккаунта бота; для sub, gift sub и resub — `channel:read:subscriptions` и токен владельца; для cheer — `bits:read` и токен владельца. Raid, channel update и stream online/offline не требуют дополнительного scope. Новые типы событий выключены по умолчанию.
 
 Как получить токен через Twitch CLI и настроить приложение, описано в [конфигурации](docs/CONFIGURATION.md).
+
+Все сообщения бота в чате проходят через одну FIFO-очередь с паузой `COMMAND_REPEAT_DELAY_MS` и пределом 100 одновременно обрабатываемых и ожидающих сообщений. Это сохраняет порядок ответов команд, таймеров, напоминаний, автоответов, EventSub и прогнозов.
 
 ## Примеры
 

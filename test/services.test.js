@@ -48,8 +48,7 @@ test('Twitch API validation reports status and scope errors without logging cred
   await assert.rejects(validateAccessToken(options, { fetchImpl: async () => new Response('', { status: 429 }) }), /rate limit/);
   await assert.rejects(validateAccessToken({
     ...options,
-    automod: { enabled: true },
-  }, { fetchImpl: async () => Response.json({ login: 'bot', user_id: '123', client_id: 'app-id', scopes: chatScopes }) }), /moderator:manage:banned_users/);
+  }, { fetchImpl: async () => Response.json({ login: 'bot', user_id: '123', client_id: 'app-id', scopes: ['chat:read'] }) }), /chat:edit/);
   await assert.rejects(validateAccessToken({
     ...options,
   }, { fetchImpl: async () => Response.json({ login: 'bot', user_id: '123', client_id: 'different', scopes: chatScopes }) }), /TWITCH_CLIENT_ID/);

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { createCustomCommandStore } from '../src/services/custom-commands.js';
-import { createMessageQueue } from '../src/utils/message-queue.js';
+import { createMessageQueue, createQueuedChatClient } from '../src/utils/message-queue.js';
 import { createCommandHandler } from '../src/commands/handler.js';
 import pinCommand from '../src/commands/pin.js';
 import pollPresetCommand from '../src/commands/pollpreset.js';
@@ -98,6 +98,29 @@ test('repeat parsing is safe and clamps before work enters the outgoing queue', 
   await handler({ channel: 'room', username: 'mod-huge', isModerator: true, message: '!tg 999' });
   assert.deepEqual(queued, [1, 5, 1, 1, 1, 1, 10]);
   assert.deepEqual(warnings, [['room', 'Слишком много повторов. Максимум: 10.']]);
+});
+
+test('repeat limit 100 sends its warning and then all 100 allowed responses', async () => {
+  const sent = [];
+  const queue = createMessageQueue({
+    send: (channel, text) => { sent.push([channel, text]); return 'sent'; },
+    delayMs: 0,
+  });
+  const handler = createCommandHandler({
+    client: createQueuedChatClient({ username: 'bot' }, queue), channel: 'room', prefix: '!', commands: new Map(),
+    commandOptions: {
+      customCommands: { get: (name) => name === '!tg' ? 'Telegram' : undefined },
+      messageQueue: queue,
+      maxRepeat: 100,
+    },
+  });
+
+  await handler({ channel: 'room', username: 'mod', isModerator: true, message: '!tg 999' });
+  await queue.close();
+
+  assert.equal(sent.length, 101);
+  assert.match(sent[0][1], /100/u);
+  assert.deepEqual(sent.slice(1), Array.from({ length: 100 }, () => ['room', 'Telegram']));
 });
 
 test('pin command requires moderator and pins the sent message using the requested duration', async () => {

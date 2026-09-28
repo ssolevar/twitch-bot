@@ -9,8 +9,9 @@ async function pinText({ twitchApi, broadcasterId, botUserId, durationSeconds },
 
 export default {
   name: 'pin', aliases: ['пин', 'закреп', 'pinpreset'], cooldown: 2,
-  async execute({ client, channel, message, args, commandName, twitchApi, broadcasterId, botUserId, pinDurationSeconds, pinMessage, pinQueue }) {
+  async execute({ client, channel, message, args, commandName, twitchApi, broadcasterId, botUserId, pinDurationSeconds, pinMessage, pinQueue, pinsEnabled = true }) {
     if (!canModerate(message, channel)) return client.say(channel, t('common.noPermission'));
+    if (!pinsEnabled) return client.say(channel, t('pin.scope'));
     let durationSeconds = pinDurationSeconds;
     if (/^\d+$/u.test(args[0] ?? '')) durationSeconds = Number(args.shift());
     if (durationSeconds !== 0 && (!Number.isInteger(durationSeconds) || durationSeconds < 30 || durationSeconds > 1800)) {

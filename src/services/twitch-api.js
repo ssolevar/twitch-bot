@@ -27,7 +27,7 @@ async function fetchWithTimeout(fetchImpl, url, options, timeoutMs, context) {
   }
 }
 
-export async function validateAccessToken({ accessToken, username, clientId, automod }, { fetchImpl = fetch, timeoutMs = 10_000 } = {}) {
+export async function validateAccessToken({ accessToken, username, clientId }, { fetchImpl = fetch, timeoutMs = 10_000 } = {}) {
   const response = await fetchWithTimeout(fetchImpl, VALIDATE_URL, {
     headers: { Authorization: `OAuth ${accessToken}` },
   }, timeoutMs, 'validating the access token');
@@ -46,8 +46,6 @@ export async function validateAccessToken({ accessToken, username, clientId, aut
   if (!data.user_id) throw new Error('Twitch token validation response did not include the bot user ID.');
 
   const requiredScopes = ['chat:read', 'chat:edit'];
-  if (automod?.enabled) requiredScopes.push('moderator:manage:banned_users');
-  requiredScopes.push('user:write:chat', 'moderator:manage:chat_messages', 'moderator:read:chat_messages');
   const scopes = new Set(data.scopes ?? []);
   const missing = requiredScopes.filter((scope) => !scopes.has(scope));
   if (missing.length) throw new Error(`Twitch token is missing required scopes: ${missing.join(', ')}.`);

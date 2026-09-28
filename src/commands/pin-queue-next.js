@@ -5,8 +5,9 @@ import { t } from '../utils/messages.js';
 
 export default {
   name: 'nextpin', aliases: ['следпин'], cooldown: 2,
-  async execute({ client, channel, message, pinQueue, pinQueueAutoRotate, twitchApi, broadcasterId, botUserId, pinDurationSeconds }) {
+  async execute({ client, channel, message, pinQueue, pinQueueAutoRotate, twitchApi, broadcasterId, botUserId, pinDurationSeconds, pinsEnabled = true }) {
     if (!canModerate(message, channel)) return client.say(channel, t('common.noPermission'));
+    if (!pinsEnabled) return client.say(channel, t('pin.scope'));
     if (!pinQueue.queueAvailable) return client.say(channel, t('pin.queueUnavailable'));
     try {
       const result = await pinQueue.pinNext({

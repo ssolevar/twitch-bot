@@ -111,10 +111,11 @@
 
 ## OAuth и дополнительные scopes
 
-При запуске проверяются логин, Client ID и обязательные scopes: `chat:read`, `chat:edit`, `user:write:chat`, `moderator:manage:chat_messages`, `moderator:read:chat_messages`. Для закрепов бот должен быть модератором или владельцем канала. Дополнительные возможности требуют:
+При запуске проверяются логин, Client ID и только два обязательных scope Twitch IRC: `chat:read` и `chat:edit`. Остальные scopes включают отдельные необязательные возможности. Если scope не выдан, бот пишет предупреждение, отключает только соответствующее действие и продолжает работу.
 
 | Возможность | Scope и владелец токена |
 |---|---|
+| Закрепление и снятие закрепа | `user:write:chat`, `moderator:manage:chat_messages`; аккаунт бота — модератор или владелец |
 | AutoMod | `moderator:manage:banned_users`; аккаунт бота — модератор |
 | Polls | `channel:manage:polls`; токен владельца канала |
 | Смена title/category | `channel:manage:broadcast`; токен владельца канала |
@@ -127,9 +128,9 @@
 Для получения user access token зарегистрируйте приложение в Twitch Developer Console и выберите нужные scopes. Пример базового токена через Twitch CLI:
 
 ```bash
-twitch token -u -s 'chat:read chat:edit user:write:chat moderator:manage:chat_messages moderator:read:chat_messages'
+twitch token -u -s 'chat:read chat:edit'
 ```
 
-Добавьте scopes из таблиц только для включаемых функций. Роли и владелец токена проверяются отдельно от scopes. [Требования Twitch API](https://dev.twitch.tv/docs/api/reference).
+Добавьте scopes из таблицы только для используемых функций. Роли и владелец токена проверяются отдельно от scopes. Все обычные сообщения бота проходят через общую FIFO-очередь, ограниченную 100 одновременно обрабатываемыми и ожидающими сообщениями и паузой `COMMAND_REPEAT_DELAY_MS`; Helix-вызовы остаются отдельными API-действиями. [Требования Twitch API](https://dev.twitch.tv/docs/api/reference).
 
 Автообновление токена необязательно. Укажите `TWITCH_REFRESH_TOKEN`, выданный вместе с текущим user access token; для конфиденциального приложения добавьте `TWITCH_CLIENT_SECRET`. При ответе 401 бот обновляет токен и сохраняет новую пару в игнорируемом Git файле `data/oauth-tokens.json` или `data/<profile>/oauth-tokens.json`. При следующем запуске сохранённая пара имеет приоритет над значениями `.env`; бот проверяет совпадение Client ID и логина владельца токена. Если файл повреждён, бот сохраняет его без перезаписи и отключает обновление до исправления. Без refresh token заменяйте истёкший access token вручную. [Обновление токенов Twitch](https://dev.twitch.tv/docs/authentication/refresh-tokens/).
