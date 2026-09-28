@@ -1,0 +1,12 @@
+{
+  "main": {
+    "TWITCH_CHANNEL": "ssolevar",
+    "BOT_LANGUAGE": "ru",
+    "ENABLE_EVENTSUB": "false"
+  },
+  "second": {
+    "TWITCH_CHANNEL": "ssolevar",
+    "BOT_LANGUAGE": "en",
+    "TIMER_MIN_CHAT_MESSAGES": "3"
+  }
+}
