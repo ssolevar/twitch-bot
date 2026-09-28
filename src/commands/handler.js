@@ -3,6 +3,7 @@ import { logger } from '../utils/logger.js';
 import { hasCommandPermission } from '../utils/permissions.js';
 import { renderTemplate } from '../utils/templates.js';
 import { t } from '../utils/messages.js';
+import { predictionView } from '../utils/prediction-format.js';
 
 export function createCommandHandler({ client, channel, prefix, commands, commandOptions = {} }) {
   const cooldowns = new Map();
@@ -11,6 +12,7 @@ export function createCommandHandler({ client, channel, prefix, commands, comman
   return async (message) => {
     if (message.channel !== channel || message.username === client.username) return;
     const text = message.message.trim();
+    commandOptions.predictionSession?.vote(message.username, text);
     if (!text.startsWith(prefix)) return;
     const [name, ...args] = text.slice(prefix.length).trim().split(/\s+/u);
     const normalizedName = name?.toLowerCase();
@@ -21,7 +23,16 @@ export function createCommandHandler({ client, channel, prefix, commands, comman
         name: requestedName, responses: [commandOptions.customCommands.get(requestedName)], enabled: true,
         permission: 'everyone', globalCooldown: 0, userCooldown: 5,
       } : null) : null;
-    if (!command && (!custom || !custom.enabled)) return;
+    const prediction = !command && !custom ? commandOptions.predictionPresets?.get?.(`!${normalizedName}`) : null;
+    if (!command && (!custom || !custom.enabled) && !prediction) return;
+    if (prediction) {
+      if (!prediction.enabled) return;
+      const allowed = commandOptions.canModerate?.(message, channel) ?? (message.isBroadcaster || message.isModerator);
+      if (!allowed) return client.say(channel, t('common.noPermission'));
+      const result = commandOptions.predictionSession.start(prediction);
+      if (!result.started) return client.say(channel, t('prediction.alreadyActive', { title: result.active.title }));
+      return client.say(channel, t('prediction.started', predictionView(prediction)));
+    }
     const commandId = command?.name ?? custom.name;
     if (command) {
       let cooldown = cooldowns.get(commandId);

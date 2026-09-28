@@ -17,3 +17,5 @@ data/polls.json
 data/timers.json
 data/auto-replies.json
 data/reminders.json
+data/faceit-user.json
+data/predictions.json

@@ -175,7 +175,7 @@ test('chat command management is restricted to moderators and saves responses', 
   await commandManagement.execute({ ...context, message: { username: 'mod', isModerator: true } });
   assert.deepEqual(calls, [['add', '!hello', 'Hello there', new Set(['help'])]]);
   assert.equal(sent[0][1], 'У вас нет прав для этой команды.');
-  assert.equal(sent[1][1], 'Команда !hello добавлена.');
+  assert.equal(sent[1][1], '✅ Команда !hello добавлена!');
 });
 
 test('poll presets load from the checked-in example JSON file', async () => {

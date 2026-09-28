@@ -64,6 +64,7 @@ export class CustomCommandStore {
     this.commands = new Map();
     this.aliasesByName = new Map();
     this.reserved = new Set();
+    this.runtimeReserved = new Set();
     this.mutation = Promise.resolve();
     this.available = true;
   }
@@ -95,6 +96,21 @@ export class CustomCommandStore {
   has(name) { return Boolean(this.resolve(name)); }
   get(name) { return this.resolve(name)?.responses[0]; }
   entries() { return [...this.commands].map(([name, record]) => [name, record.responses[0]]); }
+
+  setRuntimeReserved(names = []) {
+    const previous = this.runtimeReserved;
+    this.runtimeReserved = new Set([...names].map((name) => {
+      const input = String(name ?? '').trim().toLowerCase();
+      const bare = input.startsWith(this.prefix) ? input.slice(this.prefix.length) : input.replace(/^!/u, '');
+      return commandKey(`${this.prefix}${bare}`, this.prefix).slice(this.prefix.length);
+    }));
+    try {
+      this.#checkNames(this.commands);
+    } catch (error) {
+      this.runtimeReserved = previous;
+      throw error;
+    }
+  }
 
   resolve(name) {
     const input = String(name ?? '').toLowerCase();
@@ -241,7 +257,9 @@ export class CustomCommandStore {
 
   #requireFreeName(key, extra = new Set()) {
     const bare = key.slice(this.prefix.length);
-    if (this.reserved.has(bare) || extra.has(bare)) throw new Error('That name is already used by a built-in command.');
+    if (this.reserved.has(bare) || this.runtimeReserved.has(bare) || extra.has(bare)) {
+      throw new Error('That name is already used by a built-in command.');
+    }
     if (this.commands.has(key) || this.aliasesByName.has(key)) throw new Error(`Command or alias ${key} already exists.`);
   }
 
@@ -249,7 +267,9 @@ export class CustomCommandStore {
     const used = new Set();
     for (const [key, record] of commands) {
       for (const name of [key, ...record.aliases]) {
-        if (this.reserved.has(name.slice(this.prefix.length))) throw new Error(`Custom command ${name} conflicts with a built-in command.`);
+        if (this.reserved.has(name.slice(this.prefix.length)) || this.runtimeReserved.has(name.slice(this.prefix.length))) {
+          throw new Error(`Custom command ${name} conflicts with a built-in command.`);
+        }
         if (used.has(name)) throw new Error(`Custom command alias ${name} already exists.`);
         used.add(name);
       }

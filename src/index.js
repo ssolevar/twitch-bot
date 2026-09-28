@@ -20,6 +20,11 @@ import { createReminders } from './services/reminders.js';
 import { createActiveChatters } from './services/active-chatters.js';
 import { EventSubClient, eventSubDefinitions } from './services/eventsub.js';
 import { createOAuthTokens } from './services/oauth-tokens.js';
+import { createFaceitApi } from './services/faceit-api.js';
+import { createFaceitUserStore } from './services/faceit-user.js';
+import { createPredictionPresetStore } from './services/prediction-presets.js';
+import { createPredictionSession } from './services/prediction-session.js';
+import { t } from './utils/messages.js';
 
 export async function start() {
   const config = loadConfig();
@@ -50,7 +55,20 @@ export async function start() {
   });
   const twitchApi = createTwitchApi({ clientId: config.clientId, tokenManager, moderatorId: account.userId, streamInfoCacheSeconds: config.streamInfoCacheSeconds });
   const broadcasterId = await twitchApi.getUserId(config.channel);
+  const faceitApi = createFaceitApi({ apiKey: config.faceitApiKey, gameId: config.faceitGameId });
+  const faceitUserStore = await createFaceitUserStore(path.join(config.dataDirectory, 'faceit-user.json'), config.faceitDefaultNickname).load();
   const customCommands = await createCustomCommandStore(path.join(config.dataDirectory, 'commands.json'), config.prefix).load(new Set(commands.keys()));
+  const predictionPresets = await createPredictionPresetStore(path.join(config.dataDirectory, 'predictions.json'));
+  try {
+    const conflict = predictionPresets.listCommands().find((name) =>
+      commands.has(name.slice(1)) || customCommands.has(`${config.prefix}${name.slice(1)}`));
+    if (conflict) throw new Error(`Command ${conflict} is already in use.`);
+    customCommands.setRuntimeReserved(predictionPresets.listCommands());
+  } catch (error) {
+    predictionPresets.available = false;
+    predictionPresets.presets.clear();
+    logger.error('Prediction presets disabled because a command name is already in use.', error.message);
+  }
   const pollPresets = await loadPollPresets(path.join(config.dataDirectory, 'polls.json'), path.resolve('data/polls.example.json'));
   const pinQueue = await createPinQueue(path.join(config.dataDirectory, 'pin-queue.json'), path.join(config.dataDirectory, 'pins.json'), path.resolve('data/pins.example.json'));
   const chatTimers = await createChatTimers(path.join(config.dataDirectory, 'timers.json'), {
@@ -72,6 +90,10 @@ export async function start() {
   if (!hasPollScope) logger.warn('Poll commands disabled: OAuth token is missing channel:manage:polls.');
   else if (!isPollBroadcaster) logger.warn('Poll commands disabled: the OAuth token must belong to the channel broadcaster.');
   const messageQueue = createMessageQueue({ send: (channel, message) => client.say(channel, message), delayMs: config.commandRepeatDelayMs });
+  const predictionSession = createPredictionSession({
+    botUsername: config.username,
+    onComplete: (result) => client.say(config.channel, t('prediction.finished', result)),
+  });
   const automod = createAutoMod({
     client: { timeout: (username, durationSeconds, reason, userId) => twitchApi.timeoutUser({ broadcasterId, username, userId, durationSeconds, reason }) },
     config: config.automod,
@@ -81,7 +103,10 @@ export async function start() {
     commandOptions: {
       weatherTimeoutMs: config.weatherTimeoutMs, weatherAllowedUsernames: config.weatherAllowedUsernames,
       customCommands, messageQueue, maxRepeat: config.commandRepeatMax, canModerate,
-      twitchApi, broadcasterId, botUserId: account.userId, pinDurationSeconds: config.pinDurationSeconds, pollPresets, pollsEnabled,
+      twitchApi, broadcasterId, botUserId: account.userId, pinDurationSeconds: config.pinDurationSeconds,
+      pinMessage: config.pinMessage, pollPresets, pollsEnabled,
+      faceitApi, faceitUserStore,
+      predictionPresets, predictionSession,
       pinQueue, pinQueueAutoRotate: config.pinQueueAutoRotate,
       chatTimers, autoReplies, reminders, activeChatters, tokenScopes: account.scopes,
     },
@@ -101,7 +126,10 @@ export async function start() {
   eventSub.start();
   const stopPinRotation = config.pinQueueAutoRotate ? startPinRotation({
     pinQueue, intervalSeconds: config.pinQueueIntervalSeconds,
-    pin: (text) => pinText({ twitchApi, broadcasterId, botUserId: account.userId, durationSeconds: config.pinDurationSeconds }, text),
+    pin: (text, itemDurationSeconds) => pinText({
+      twitchApi, broadcasterId, botUserId: account.userId,
+      durationSeconds: itemDurationSeconds ?? config.pinDurationSeconds,
+    }, text),
     onError: (error) => logger.error('Automatic pin rotation failed.', error.message),
   }) : () => {};
   logger.info(`Starting bot for #${config.channel}. AutoMod ${config.automod.enabled ? 'enabled' : 'disabled'}.`);
@@ -124,6 +152,7 @@ export async function start() {
     closing = true;
     logger.info(`Received ${signal}; shutting down.`);
     clearInterval(tokenCheckTimer);
+    predictionSession.close();
     await stopPinRotation();
     await stopChatTimers();
     await stopReminders();

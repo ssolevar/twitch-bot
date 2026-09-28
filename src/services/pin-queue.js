@@ -15,6 +15,23 @@ function validateText(value) {
   return text;
 }
 
+function validateDuration(value) {
+  if (value === null || value === undefined) return null;
+  if (!Number.isInteger(value) || (value !== 0 && (value < 30 || value > 1800))) {
+    throw new Error('Длительность закрепа должна быть 0 или от 30 до 1800 секунд.');
+  }
+  return value;
+}
+
+function normalizeQueueItem(value) {
+  if (typeof value === 'string') return { text: validateText(value), durationSeconds: null };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid pin queue item.');
+  return {
+    text: validateText(value.text),
+    durationSeconds: validateDuration(value.durationSeconds),
+  };
+}
+
 function validatePresetName(value) {
   const name = String(value ?? '').trim().toLowerCase();
   if (!/^[\p{L}\p{N}_-]{1,32}$/u.test(name)) throw new Error('Имя пресета: 1-32 буквы, цифры, дефис или подчеркивание.');
@@ -53,7 +70,7 @@ export class PinQueue {
       if (!state || !Array.isArray(state.items) || state.items.length > MAX_ITEMS || !Number.isInteger(state.rotationIndex)) {
         throw new Error('Expected items (up to 100 entries) and rotationIndex.');
       }
-      this.items = state.items.map(validateText);
+      this.items = state.items.map(normalizeQueueItem);
       this.rotationIndex = this.items.length ? ((state.rotationIndex % this.items.length) + this.items.length) % this.items.length : 0;
     } catch (error) {
       this.items = [];
@@ -86,15 +103,16 @@ export class PinQueue {
     return this;
   }
 
-  list() { return [...this.items]; }
+  list() { return this.items.map((item) => item.text); }
+  listItems() { return this.items.map((item) => ({ ...item })); }
   listPresets() { return [...this.presets.keys()]; }
   getPreset(name) { return this.presets.get(String(name ?? '').trim().toLowerCase()); }
 
-  add(text) {
+  add(text, durationSeconds = null) {
     return this.#change(async () => {
       this.#requireQueue();
       if (this.items.length >= MAX_ITEMS) throw new Error(`Очередь заполнена (максимум ${MAX_ITEMS} закрепов).`);
-      const next = [...this.items, validateText(text)];
+      const next = [...this.items, { text: validateText(text), durationSeconds: validateDuration(durationSeconds) }];
       await this.#saveQueue(next, this.rotationIndex);
       return next.length;
     });
@@ -108,7 +126,7 @@ export class PinQueue {
       const [removed] = next.splice(position - 1, 1);
       const cursor = next.length === 0 ? 0 : Math.min(next.length - 1, Math.max(0, this.rotationIndex - (position - 1 < this.rotationIndex ? 1 : 0)));
       await this.#saveQueue(next, cursor);
-      return removed;
+      return removed.text;
     });
   }
 
@@ -149,8 +167,8 @@ export class PinQueue {
       this.#requireQueue();
       if (!this.items.length) return null;
       const position = rotate ? this.rotationIndex % this.items.length : 0;
-      const text = this.items[position];
-      await pin(text);
+      const item = this.items[position];
+      await pin(item.text, item.durationSeconds);
       if (rotate) {
         const nextIndex = (position + 1) % this.items.length;
         await this.#saveQueue(this.items, nextIndex);
@@ -159,7 +177,7 @@ export class PinQueue {
         next.splice(0, 1);
         await this.#saveQueue(next, 0);
       }
-      return { text, remaining: this.items.length, position: position + 1 };
+      return { ...item, remaining: this.items.length, position: position + 1 };
     });
   }
 

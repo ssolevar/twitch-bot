@@ -7,7 +7,8 @@ import { TwitchClient } from '../src/bot/twitch-client.js';
 
 test('Twitch chat parser extracts channel, user, text, and moderator flags', () => {
   assert.deepEqual(parseChatMessage('@mod=1;badges=moderator/1;user-id=42 :Some_User!some_user@some_user.tmi.twitch.tv PRIVMSG #Test :!ping'), {
-    username: 'some_user', channel: 'test', message: '!ping', userId: '42', isBroadcaster: false, isModerator: true,
+    username: 'some_user', channel: 'test', message: '!ping', userId: '42', replyParentMessageId: '',
+    isBroadcaster: false, isModerator: true,
     isSubscriber: false, isVip: false,
   });
 });

@@ -8,6 +8,7 @@ export function parseChatMessage(line) {
   return {
     username: match[2].toLowerCase(), channel: match[3].toLowerCase(), message: match[4],
     userId: tags['user-id'] ?? '',
+    replyParentMessageId: tags['reply-parent-msg-id'] ?? '',
     isBroadcaster: tags.badges?.split(',').some((badge) => badge.startsWith('broadcaster/')) ?? false,
     isModerator: tags.mod === '1' || (tags.badges?.split(',').some((badge) => badge.startsWith('moderator/')) ?? false),
     isSubscriber: tags.subscriber === '1' || (tags.badges?.split(',').some((badge) => badge.startsWith('subscriber/') || badge.startsWith('founder/')) ?? false),

@@ -22,8 +22,7 @@ export function loadConfig() {
   const username = need('TWITCH_BOT_USERNAME').toLowerCase().replace(/^@/, '');
   const channel = need('TWITCH_CHANNEL').toLowerCase().replace(/^#/, '');
   const weatherAllowedUsernames = parseUsernames(env.WEATHER_ALLOWED_USERNAMES);
-  const pinDurationSeconds = integer('PIN_DURATION_SECONDS', 600, 1800);
-  if (pinDurationSeconds < 30) throw new Error('PIN_DURATION_SECONDS must be between 30 and 1800.');
+  const pinDurationSeconds = env.PIN_DURATION_SECONDS?.trim() === '0' ? 0 : integer('PIN_DURATION_SECONDS', 600, 1800);
   const language = (env.BOT_LANGUAGE ?? 'ru').toLowerCase();
   if (!['ru', 'en'].includes(language)) throw new Error('BOT_LANGUAGE must be ru or en.');
   configureLanguage(language);
@@ -50,6 +49,10 @@ export function loadConfig() {
     activeChatterWindowMinutes: integer('ACTIVE_CHATTER_WINDOW_MINUTES', 15, 1440),
     streamInfoCacheSeconds: integer('STREAM_INFO_CACHE_SECONDS', 30, 3600),
     pinDurationSeconds,
+    pinMessage: env.PIN_MESSAGE?.trim() ?? '',
+    faceitApiKey: env.FACEIT_API_KEY?.trim() ?? '',
+    faceitDefaultNickname: env.FACEIT_DEFAULT_NICKNAME?.trim() ?? '',
+    faceitGameId: env.FACEIT_GAME_ID?.trim().toLowerCase() || 'cs2',
     pinQueueAutoRotate: (env.PIN_QUEUE_AUTO_ROTATE ?? 'false').toLowerCase() === 'true',
     pinQueueIntervalSeconds: integer('PIN_QUEUE_INTERVAL_SECONDS', 600, 86_400),
     weatherEnabled: (env.ENABLE_WEATHER ?? 'false').toLowerCase() === 'true',

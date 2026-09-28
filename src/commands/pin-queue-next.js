@@ -11,7 +11,10 @@ export default {
     try {
       const result = await pinQueue.pinNext({
         rotate: pinQueueAutoRotate,
-        pin: (text) => pinText({ twitchApi, broadcasterId, botUserId, durationSeconds: pinDurationSeconds }, text),
+        pin: (text, itemDurationSeconds) => pinText({
+          twitchApi, broadcasterId, botUserId,
+          durationSeconds: itemDurationSeconds ?? pinDurationSeconds,
+        }, text),
       });
       if (!result) return client.say(channel, t('pin.queueEmpty'));
       client.say(channel, t('pin.nextDone', { remaining: result.remaining }));

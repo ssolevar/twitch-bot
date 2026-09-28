@@ -1,6 +1,7 @@
 import { canModerate } from '../utils/permissions.js';
 import { logger } from '../utils/logger.js';
 import { t } from '../utils/messages.js';
+import { reservedCommandNames } from '../utils/reserved-command-names.js';
 
 const actions = new Map([
   ['addalias', 'addAlias'], ['добалиас', 'addAlias'],
@@ -12,13 +13,13 @@ const actions = new Map([
   ['delresponse', 'deleteResponse'], ['удалответ', 'deleteResponse'],
   ['cooldown', 'globalCooldown'], ['кд', 'globalCooldown'],
   ['usercooldown', 'userCooldown'], ['юзеркд', 'userCooldown'],
-  ['disablecom', 'disable'], ['выклком', 'disable'],
-  ['enablecom', 'enable'], ['вклком', 'enable'],
+  ['disablecom', 'disable'], ['offcmd', 'disable'], ['выклком', 'disable'],
+  ['enablecom', 'enable'], ['oncmd', 'enable'], ['вклком', 'enable'],
 ]);
 
 export default {
   name: 'addalias', aliases: [...actions.keys()].filter((name) => name !== 'addalias'), cooldown: 0,
-  async execute({ client, channel, message, args, commandName, customCommands, commands }) {
+  async execute({ client, channel, message, args, commandName, customCommands, commands, predictionPresets }) {
     if (!canModerate(message, channel)) return client.say(channel, t('common.noPermission'));
     const action = actions.get(commandName);
     const [name, second, ...rest] = args;
@@ -26,7 +27,7 @@ export default {
       return client.say(channel, t('settings.usage', { command: commandName }));
     }
     try {
-      if (action === 'addAlias') await customCommands.addAlias(name, second, new Set(commands.keys()));
+      if (action === 'addAlias') await customCommands.addAlias(name, second, reservedCommandNames(commands, predictionPresets));
       else if (action === 'deleteAlias') await customCommands.deleteAlias(name);
       else if (action === 'aliases') {
         const aliases = customCommands.aliases(name);
@@ -41,7 +42,9 @@ export default {
       } else if (action === 'deleteResponse') await customCommands.deleteResponse(name, Number(second));
       else if (action === 'globalCooldown' || action === 'userCooldown') await customCommands.setCooldown(name, action, second);
       else if (action === 'disable' || action === 'enable') await customCommands.setEnabled(name, action === 'enable');
-      client.say(channel, t('settings.updated', { name: name.toLowerCase() }));
+      if (action === 'disable' || action === 'enable') {
+        client.say(channel, t(action === 'enable' ? 'settings.enabled' : 'settings.disabled', { name: name.toLowerCase() }));
+      } else client.say(channel, t('settings.updated', { name: name.toLowerCase() }));
     } catch (error) {
       logger.warn('Could not change custom command settings.', error.message);
       if (error.message.includes('already exists') || error.message.includes('built-in command')) return client.say(channel, t('settings.nameTaken'));

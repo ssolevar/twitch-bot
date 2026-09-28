@@ -127,14 +127,14 @@ export function createTwitchApi({ clientId, accessToken, tokenManager, moderator
   }
 
   async function pinChatMessage({ broadcasterId, messageId, durationSeconds }) {
-    if (!Number.isInteger(durationSeconds) || durationSeconds < 30 || durationSeconds > 1800) {
+    if (durationSeconds !== undefined && durationSeconds !== 0 && (!Number.isInteger(durationSeconds) || durationSeconds < 30 || durationSeconds > 1800)) {
       throw new Error('Pin duration must be between 30 and 1800 seconds.');
     }
     const url = new URL(`${API_ROOT}/chat/pins`);
     url.searchParams.set('broadcaster_id', broadcasterId);
     url.searchParams.set('moderator_id', moderatorId);
     url.searchParams.set('message_id', messageId);
-    url.searchParams.set('duration_seconds', String(durationSeconds));
+    if (durationSeconds !== undefined && durationSeconds !== 0) url.searchParams.set('duration_seconds', String(durationSeconds));
     await request(url, { method: 'PUT', context: 'pinning a chat message' });
   }
 
@@ -152,6 +152,30 @@ export function createTwitchApi({ clientId, accessToken, tokenManager, moderator
     url.searchParams.set('moderator_id', moderatorId);
     url.searchParams.set('message_id', messageId);
     await request(url, { method: 'DELETE', context: 'unpinning a chat message' });
+  }
+
+  async function sendShoutout({ broadcasterId, targetBroadcasterId }) {
+    const url = new URL(`${API_ROOT}/chat/shoutouts`);
+    url.searchParams.set('from_broadcaster_id', broadcasterId);
+    url.searchParams.set('to_broadcaster_id', targetBroadcasterId);
+    url.searchParams.set('moderator_id', moderatorId);
+    await request(url, { method: 'POST', context: 'sending a chat shoutout' });
+  }
+
+  async function createClip({ broadcasterId }) {
+    const url = new URL(`${API_ROOT}/clips`);
+    url.searchParams.set('broadcaster_id', broadcasterId);
+    const data = await request(url, { method: 'POST', context: 'creating a Twitch clip' });
+    const clipId = data?.data?.[0]?.id;
+    if (!clipId) throw new Error('Twitch did not return a clip ID.');
+    return clipId;
+  }
+
+  async function getClipUrl({ clipId }) {
+    const url = new URL(`${API_ROOT}/clips`);
+    url.searchParams.set('id', clipId);
+    const data = await request(url, { context: 'checking the created Twitch clip' });
+    return data?.data?.[0]?.url ?? null;
   }
 
   async function createPoll({ broadcasterId, title, choices, duration }) {
@@ -218,5 +242,5 @@ export function createTwitchApi({ clientId, accessToken, tokenManager, moderator
     });
   }
 
-  return { getUserId, timeoutUser, sendChatMessage, pinChatMessage, getPinnedChatMessage, unpinChatMessage, createPoll, getChannelInformation, updateChannelInformation, getGameByName, updateChatSettings, clearChat, createEventSubSubscription };
+  return { getUserId, timeoutUser, sendChatMessage, pinChatMessage, getPinnedChatMessage, unpinChatMessage, sendShoutout, createClip, getClipUrl, createPoll, getChannelInformation, updateChannelInformation, getGameByName, updateChatSettings, clearChat, createEventSubSubscription };
 }

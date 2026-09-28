@@ -1,6 +1,7 @@
 import { canModerate } from '../utils/permissions.js';
 import { logger } from '../utils/logger.js';
 import { t } from '../utils/messages.js';
+import { reservedCommandNames } from '../utils/reserved-command-names.js';
 
 const actions = new Map([
   ['инфоком', 'info'], ['infocom', 'info'],
@@ -46,7 +47,7 @@ export default {
   aliases: [...actions.keys()].filter((name) => name !== 'инфоком'),
   cooldown: 0,
   async execute(context) {
-    const { client, channel, message, args, commandName, customCommands, commands } = context;
+    const { client, channel, message, args, commandName, customCommands, commands, predictionPresets } = context;
     if (!canModerate(message, channel)) return client.say(channel, t('common.noPermission'));
     const action = actions.get(commandName);
     if (action === 'info' && args.length !== 1) return client.say(channel, t('transfer.usageInfo'));
@@ -58,7 +59,7 @@ export default {
     try {
       if (action === 'info') return await showInfo(context, args[0]);
       if (action === 'copy') {
-        await customCommands.copy(args[0], args[1], new Set(commands.keys()));
+        await customCommands.copy(args[0], args[1], reservedCommandNames(commands, predictionPresets));
         return client.say(channel, t('transfer.copied', { source: args[0].toLowerCase(), target: args[1].toLowerCase() }));
       }
       if (action === 'export') {
